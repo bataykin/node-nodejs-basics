@@ -1,56 +1,33 @@
 import * as os from "os";
 
-import {isMainThread, Worker} from "worker_threads";
+import {Worker} from "worker_threads";
+import {fileURLToPath} from "url";
+import path from "node:path";
 
 const performCalculations = async () => {
     // Write your code here
-    const cpuCount = os.cpus().length
-    console.log("cpuCount", cpuCount)
-    // console.log(isMainThread)
+    const cpus = os.cpus()
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename)
+    const fullPath = path.join(__dirname, 'worker.js')
+    let num = 10
 
-    // generate array with random numbers
-    function randomArray(length, max) {
-        return Array.apply(null, Array(length)).map(function() {
-            return Math.round(Math.random() * max);
-        });
-    }
+    const workersCB = await Promise.all(cpus.map(() => {
+        return new Promise((res, rej) => {
+            const worker = new Worker(fullPath, {workerData: num++})
+            worker.on("message", msg => res(msg))
+            worker.on("error", msg => rej(msg))
+        })
+    }))
 
-    if(isMainThread) {
-        const input = randomArray(100, 200);
-        // run thread and pass info
-        const worker = new Worker('./worker.js', { workerData: { value: input } });
-        worker.on('message', (result) => {
-            console.log(result);
-        });
-        worker.on('exit', (code) => {
-            if (code !== 0)
-                throw new Error(`Worker stopped with exit code ${code}`);
-            else
-                console.log('Worker stopped ' + code);
-        });
-    }
+        const results = workersCB.map((result) =>
+            ({
+            status: typeof result === "number" ? 'resolved' : 'error',
+            data: typeof result === "number" ? result : null,
+        }))
+    console.log(results)
+        return results
 
-    // if(isMainThread) {
-    //     const __filename = fileURLToPath(import.meta.url);
-    //     console.log('main thread start...');
-    //     const worker = new Worker(__filename);
-    //     worker.on('message', (msg) => {
-    //         console.log(`Worker: ${msg}`);
-    //     });
-    //
-    //     console.log("doing some random work in main thread..!!");
-    // }else{
-    //     parentPort.postMessage('hello from worker thread');
-    //     cpuIntensiveTask(1000);
-    //     parentPort.postMessage('i am working');
-    //     cpuIntensiveTask(1000);
-    //     parentPort.postMessage('task is done..!!');
-    // }
-    //
-    // function cpuIntensiveTask(timeInSecond) {
-    //     const end = Date.now() + timeInSecond;
-    //     while (Date.now() < end) { }
-    // }
-};
+    };
 
-await performCalculations();
+    await performCalculations();
